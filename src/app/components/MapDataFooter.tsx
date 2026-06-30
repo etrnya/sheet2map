@@ -6,6 +6,28 @@ interface MapDataFooterProps {
   metadata: MapMetadata;
 }
 
+// 💡 格式化 ISO 日期字串為易讀的在地化格式 (例如 YYYY-MM-DD HH:mm)
+const formatDate = (dateString?: string, showTime: boolean = false): string => {
+  if (!dateString) return '';
+  try {
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return dateString; // 若解析失敗退回原始字串
+    
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    
+    if (showTime) {
+      const hh = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+    }
+    return `${yyyy}-${mm}-${dd}`;
+  } catch {
+    return dateString;
+  }
+};
+
 export default function MapDataFooter({ metadata }: MapDataFooterProps) {
   // 若沒有最基本的資料來源資訊，則不顯示
   if (!metadata.source_name) return null;
@@ -40,7 +62,7 @@ export default function MapDataFooter({ metadata }: MapDataFooterProps) {
         {metadata.source_date && (
           <div className="flex items-center">
             <span className="w-1.5 h-1.5 rounded-full bg-orange-400 mr-1.5"></span>
-            <span>資料時間：<strong className="text-gray-700 font-extrabold">{metadata.source_date}</strong></span>
+            <span>資料時間：<strong className="text-gray-700 font-extrabold">{formatDate(metadata.source_date, false)}</strong></span>
           </div>
         )}
 
@@ -48,7 +70,7 @@ export default function MapDataFooter({ metadata }: MapDataFooterProps) {
         {metadata.imported_at && (
           <div className="flex items-center">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5"></span>
-            <span>最後匯入：<strong className="text-gray-700 font-extrabold">{metadata.imported_at}</strong></span>
+            <span>最後匯入：<strong className="text-gray-700 font-extrabold">{formatDate(metadata.imported_at, true)}</strong></span>
           </div>
         )}
 

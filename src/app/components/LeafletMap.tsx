@@ -90,9 +90,9 @@ export default function LeafletMap({
       attributionControl: true,
     });
 
-    // 載入高質感無障礙地圖圖磚 (Stadia/CartoDB Voyger)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    // 載入標準 OpenStreetMap 圖磚 (支援繁體中文在地化地標與路名)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 20,
     }).addTo(map);
 
