@@ -602,28 +602,14 @@ function geocodePointsSheet() {
         pointsSheet.getRange(i + 1, lngCol).setValue(coords.lng);
         cacheHitCount++;
       } else {
-        // 2. 呼叫 OSM Nominatim API
+        // 2. 使用 Google Apps Script 內建之 Google Maps Geocoder API (高速且無鎖 IP 問題)
         try {
-          // 💡 Nominatim 規定：每秒上限 1 次請求，否則會被鎖 IP。強制 Sleep。
-          Utilities.sleep(1000);
+          const geocoder = Maps.newGeocoder().setLanguage("zh-TW");
+          const response = geocoder.geocode(address);
           
-          const url = "https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(address) + "&limit=1";
-          const response = UrlFetchApp.fetch(url, {
-            "headers": {
-              "User-Agent": "Sheet2Map Geocoder Agent (etrnya@gmail.com)"
-            },
-            "muteHttpExceptions": true
-          });
-          
-          if (response.getResponseCode() !== 200) {
-            failedCount++;
-            continue;
-          }
-          
-          const result = JSON.parse(response.getContentText());
-          if (result && result.length > 0) {
-            const lat = parseFloat(result[0].lat);
-            const lng = parseFloat(result[0].lon);
+          if (response.status === "OK" && response.results && response.results.length > 0) {
+            const lat = response.results[0].geometry.location.lat;
+            const lng = response.results[0].geometry.location.lng;
             
             // 寫入點位表
             pointsSheet.getRange(i + 1, latCol).setValue(lat);
@@ -637,7 +623,7 @@ function geocodePointsSheet() {
             failedCount++;
           }
         } catch (err) {
-          Logger.log("地理編碼出錯 (" + address + "): " + err.message);
+          Logger.log("Google 地理編碼出錯 (" + address + "): " + err.message);
           failedCount++;
         }
       }
