@@ -85,6 +85,58 @@ def fix_traditional_chinese_typos(text):
     text = text.replace(" (安)", "").replace("(安)", "")
     return text
 
+# 🧬 雙向對照稽核比對器 (Double-Check Reconciler)
+def audit_points(points, raw_source_str):
+    """
+    將 AI 產生的點位名稱與地址，與原始輸入資料進行雙向比對。
+    檢查有沒有憑空捏造 (Hallucination) 或對齊錯位。
+    """
+    print("\n[Audit] 正在啟動雙向對照稽核管線 (Double-Check Reconciler)...")
+    
+    def normalize_text(t):
+        if not t:
+            return ""
+        t = str(t).lower().replace("台", "臺").replace("裡", "里")
+        # 去除所有空白與常用標點符號與特殊字元
+        return re.sub(r'[\s\-()（）:：,，.。\/\\_#+=#]*', '', t)
+
+    normalized_source = normalize_text(raw_source_str)
+    failed_audits = []
+    
+    for idx, p in enumerate(points):
+        name = p.get("name", "").strip()
+        address = p.get("address", "").strip()
+        
+        norm_name = normalize_text(name)
+        norm_address = normalize_text(address)
+        
+        # 1. 檢查名稱是否能在原始資料中完全找到
+        name_passed = False
+        if norm_name and norm_name in normalized_source:
+            name_passed = True
+            
+        # 2. 檢查地址是否能在原始資料中完全找到
+        address_passed = False
+        if not norm_address:
+            address_passed = True # 地址為空則不觸發此比對，由必要欄位檢查處理
+        elif norm_address in normalized_source:
+            address_passed = True
+            
+        if not name_passed or not address_passed:
+            reasons = []
+            if not name_passed:
+                reasons.append("地標名稱在原始資料中無法完全匹配 (可能有錯別字或幻覺)")
+            if not address_passed:
+                reasons.append("地標地址在原始資料中無法完全匹配 (可能有錯別字或對齊錯位)")
+                
+            failed_audits.append({
+                "name": name,
+                "address": address,
+                "reasons": reasons
+            })
+            
+    return failed_audits
+
 # 🧭 內部底層查詢 Nominatim
 def _query_nominatim(address):
     try:
@@ -422,6 +474,29 @@ def main():
         print(f"  [Duplicate Warning] 重複地標包括: {', '.join(duplicate_names[:10])}")
     print(f"[INFO] 經過去重後，共有 {len(unique_points)} 筆有效點位。")
 
+    # 4.5. 雙向對照稽核 (Double-Check Reconciler)
+    raw_source_str = ""
+    if is_xlsx:
+        raw_source_str = json.dumps(data_rows, ensure_ascii=False)
+    else:
+        raw_source_str = raw_content
+
+    failed_audits = audit_points(unique_points, raw_source_str)
+    
+    if failed_audits:
+        print(f"\n[Audit Warning] 雙向對照稽核發現 {len(failed_audits)} 筆地標名稱或地址與原始資料不符！")
+        for f in failed_audits[:5]:
+            print(f"  ⚠️ 地標: '{f['name']}' (地址: '{f['address']}')")
+            for reason in f['reasons']:
+                print(f"    -> 原因: {reason}")
+        if len(failed_audits) > 5:
+            print(f"  ... 等共 {len(failed_audits)} 筆。")
+            
+        # 強制標示為 human-review
+        metadata["automation_level"] = "human-review"
+    else:
+        print("\n[Audit Success] 雙向對照稽核通過！所有點位名稱與地址皆在原始資料中找到匹配。")
+
     # 5. 地理編碼策略 (Geocoding & Failover)
     success_geocode_count = 0
     failed_geocode_count = 0
@@ -516,7 +591,7 @@ def main():
 
     # 7. 生成匯入日誌報告 (IMPORT_LOG)
     import_status = "success"
-    if low_confidence_count > 0 or failed_geocode_count > 0 or out_of_bounds_count > 0:
+    if low_confidence_count > 0 or failed_geocode_count > 0 or out_of_bounds_count > 0 or failed_audits:
         import_status = "warning"
         
     notes_parts = []
@@ -528,6 +603,8 @@ def main():
         notes_parts.append(f"GeocodeFailed: {failed_geocode_count}")
     if cache_hit_count > 0:
         notes_parts.append(f"CacheHit: {cache_hit_count}")
+    if failed_audits:
+        notes_parts.append(f"AuditFailed: {len(failed_audits)}")
         
     notes = ", ".join(notes_parts) if notes_parts else "AI Auto Import Successfully."
     
@@ -562,6 +639,8 @@ def main():
             print(f"  - 地理編碼失敗: {failed_geocode_count} 筆 (請在雲端手動編碼或修補地址)")
         if out_of_bounds_count > 0:
             print(f"  - 座標超出合理地理邊界警告: {out_of_bounds_count} 筆 (已記錄於匯入日誌中)")
+        if failed_audits:
+            print(f"  - 雙向對照稽核未通過警告: {len(failed_audits)} 筆 (已記錄並強制降級為 human-review)")
         print(f"  - 專案發布等級: {metadata.get('automation_level')}")
         print(f"  - 雲端回傳訊息: {result.get('message')}")
     else:
