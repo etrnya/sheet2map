@@ -6,6 +6,37 @@ interface PageProps {
   params: Promise<{ mapId: string }>;
 }
 
+// 🌐 動態產生 SEO 與 LINE 分享預覽資料 (Open Graph)
+export async function generateMetadata({ params }: PageProps) {
+  const { mapId } = await params;
+  const result = await getMapDataAction(mapId);
+  
+  if (result.success && result.data?.metadata) {
+    const meta = result.data.metadata;
+    return {
+      title: meta.title,
+      description: meta.description || '手機版微型互動地圖平台',
+      openGraph: {
+        title: `${meta.title} | Sheet2Map`,
+        description: meta.description || '手機版微型互動地圖平台',
+        images: [
+          {
+            url: '/og-image.png',
+            width: 1200,
+            height: 630,
+            alt: meta.title,
+          }
+        ],
+      }
+    };
+  }
+  
+  return {
+    title: '互動地圖',
+    description: '手機版微型互動地圖平台',
+  };
+}
+
 export default async function MapPage({ params }: PageProps) {
   const { mapId } = await params;
   
