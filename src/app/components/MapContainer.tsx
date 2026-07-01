@@ -96,10 +96,15 @@ export default function MapContainer({ points, config, metadata }: MapContainerP
     return () => clearTimeout(timer);
   }, [searchQuery, config.map_id, config.enable_cross_search]);
 
-  // 1. 動態分析出所有點位擁有的分類列表 (去除重複)
+  // 1. 動態分析出所有點位擁有的分類與數量列表
   const categories = useMemo(() => {
-    const cats = points.map((p) => p.category).filter(Boolean);
-    return Array.from(new Set(cats));
+    const counts: Record<string, number> = {};
+    points.forEach((p) => {
+      if (p.category) {
+        counts[p.category] = (counts[p.category] || 0) + 1;
+      }
+    });
+    return Object.entries(counts).map(([name, count]) => ({ name, count }));
   }, [points]);
 
   // 2. 進行前端點位篩選 (搜尋關鍵字 + 分類篩選 + 收藏夾過濾)
@@ -203,6 +208,7 @@ export default function MapContainer({ points, config, metadata }: MapContainerP
             onSelectCategory={setSelectedCategory}
             config={config}
             favoritesCount={favorites.length}
+            totalPointsCount={points.length}
           />
 
           {/* 🌐 跨地圖全域搜尋結果顯示 */}

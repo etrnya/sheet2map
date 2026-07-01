@@ -389,6 +389,11 @@ def main():
         metadata["category"] = fix_traditional_chinese_typos(metadata.get("category", ""))
         metadata["source_name"] = fix_traditional_chinese_typos(metadata.get("source_name", ""))
         
+        # 針對戒菸服務機構地圖強制將來源寫入為國民健康署
+        if args.map_id == "quit-smoking":
+            metadata["source_name"] = "衛生福利部國民健康署"
+            metadata["source_url"] = "https://ttc.hpa.gov.tw/Web/Agency.aspx"
+        
     for p in all_points:
         p["name"] = fix_traditional_chinese_typos(p.get("name", ""))
         p["address"] = fix_traditional_chinese_typos(p.get("address", ""))

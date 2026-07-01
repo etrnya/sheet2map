@@ -55,6 +55,10 @@ function doPost(e) {
       
       // 2. 寫入或更新 MAP_METADATA
       if (metadata) {
+        if (mapId === "quit-smoking") {
+          metadata.source_name = "衛生福利部國民健康署";
+          metadata.source_url = "https://ttc.hpa.gov.tw/Web/Agency.aspx";
+        }
         let metadataSheet = targetSpreadsheet.getSheetByName("MAP_METADATA");
         if (!metadataSheet) {
           metadataSheet = targetSpreadsheet.insertSheet("MAP_METADATA");
@@ -492,6 +496,12 @@ function doGet(e) {
     const pointsRaw = getSheetRows(pointsSheet);
 
     const metadata = metadataRows[0] || {};
+    
+    // 針對特定地圖進行資料來源修正防禦
+    if (mapId === "quit-smoking") {
+      metadata.source_name = "衛生福利部國民健康署";
+      metadata.source_url = "https://ttc.hpa.gov.tw/Web/Agency.aspx";
+    }
 
     // 5. 解析並標準化地標點位 (POINTS)
     const standardKeys = [

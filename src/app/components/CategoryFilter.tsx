@@ -3,11 +3,12 @@
 import { MapConfig } from '@/types/map';
 
 interface CategoryFilterProps {
-  categories: string[];
+  categories: { name: string; count: number }[];
   selectedCategory: string;
   onSelectCategory: (category: string) => void;
   config: MapConfig;
   favoritesCount?: number;
+  totalPointsCount?: number;
 }
 
 // 根據 theme_color 名稱返回 Tailwind 樣式類別對照
@@ -30,6 +31,7 @@ export default function CategoryFilter({
   onSelectCategory,
   config,
   favoritesCount = 0,
+  totalPointsCount = 0,
 }: CategoryFilterProps) {
   const theme = getThemeClasses(config.theme_color);
 
@@ -46,7 +48,7 @@ export default function CategoryFilter({
               : 'bg-white/95 text-gray-600 border-gray-200 hover:bg-gray-50'
           }`}
         >
-          全部 ({categories.length ? '多種' : '0'})
+          全部 ({totalPointsCount})
         </button>
 
         {/* ⭐️ 「我的收藏」按鈕 (若地圖設定啟用) */}
@@ -66,15 +68,15 @@ export default function CategoryFilter({
         {/* 各分類按鈕 */}
         {categories.map((cat) => (
           <button
-            key={cat}
-            onClick={() => onSelectCategory(cat)}
+            key={cat.name}
+            onClick={() => onSelectCategory(cat.name)}
             className={`px-4 py-2 text-[14px] font-semibold border rounded-full transition-all duration-300 active:scale-95 whitespace-nowrap ${
-              selectedCategory === cat
+              selectedCategory === cat.name
                 ? `${theme.active} border-transparent shadow-md`
                 : 'bg-white/95 text-gray-600 border-gray-200 hover:bg-gray-50'
             }`}
           >
-            {cat}
+            {cat.name} ({cat.count})
           </button>
         ))}
       </div>
