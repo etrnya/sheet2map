@@ -60,7 +60,10 @@ function doPost(e) {
           metadataSheet = targetSpreadsheet.insertSheet("MAP_METADATA");
         }
         metadataSheet.clear();
-        const metaHeaders = ["title", "description", "category", "source_name", "source_url", "source_date", "imported_at"];
+        const metaHeaders = [
+          "title", "description", "category", "source_name", "source_url", 
+          "source_date", "imported_at", "automation_level", "maintainer"
+        ];
         metadataSheet.getRange(1, 1, 1, metaHeaders.length).setValues([metaHeaders]);
         const metaRow = [
           metadata.title || mapConfig.title || "",
@@ -69,7 +72,9 @@ function doPost(e) {
           metadata.source_name || "",
           metadata.source_url || "",
           metadata.source_date || "",
-          new Date().toISOString()
+          new Date().toISOString(),
+          metadata.automation_level || "full-auto",
+          metadata.maintainer || "etrnya"
         ];
         metadataSheet.getRange(2, 1, 1, metaRow.length).setValues([metaRow]);
       }
@@ -114,7 +119,7 @@ function doPost(e) {
           row.push(p.description || "");
           row.push(p.image || "");
           row.push(p.opening_hours || "");
-          row.push(p.tags ? p.tags.join(",") : "");
+          row.push(p.tags ? (Array.isArray(p.tags) ? p.tags.join(",") : p.tags) : "");
           
           customKeys.forEach(k => {
             row.push(p.custom_fields && p.custom_fields[k] !== undefined ? p.custom_fields[k] : "");
@@ -123,11 +128,57 @@ function doPost(e) {
         });
         
         pointsSheet.getRange(2, 1, rowsToValues.length, allHeaders.length).setValues(rowsToValues);
+        
+        // 4. 自動反哺與同步 ADDRESS_CACHE
+        let cacheSheet = targetSpreadsheet.getSheetByName("ADDRESS_CACHE");
+        if (!cacheSheet) {
+          cacheSheet = targetSpreadsheet.insertSheet("ADDRESS_CACHE");
+          cacheSheet.getRange(1, 1, 1, 4).setValues([["address", "lat", "lng", "updated_at"]]);
+        }
+        
+        const existingCacheRows = getSheetRows(cacheSheet);
+        const existingAddresses = new Set(existingCacheRows.map(r => String(r.address).trim()));
+        
+        const newCacheRows = [];
+        const nowIso = new Date().toISOString();
+        points.forEach(p => {
+          const addr = p.address ? String(p.address).trim() : "";
+          const latVal = p.lat ? parseFloat(p.lat) : 0;
+          const lngVal = p.lng ? parseFloat(p.lng) : 0;
+          if (addr && latVal !== 0 && lngVal !== 0 && !existingAddresses.has(addr)) {
+            newCacheRows.push([addr, latVal, lngVal, nowIso]);
+            existingAddresses.add(addr);
+          }
+        });
+        
+        if (newCacheRows.length > 0) {
+          cacheSheet.getRange(cacheSheet.getLastRow() + 1, 1, newCacheRows.length, 4).setValues(newCacheRows);
+        }
+      }
+      
+      // 5. 寫入或更新 IMPORT_LOG
+      const importLog = postData.import_log;
+      if (importLog) {
+        let logSheet = targetSpreadsheet.getSheetByName("IMPORT_LOG");
+        if (!logSheet) {
+          logSheet = targetSpreadsheet.insertSheet("IMPORT_LOG");
+          logSheet.getRange(1, 1, 1, 7).setValues([["timestamp", "status", "total_count", "success_count", "failed_count", "duplicate_count", "notes"]]);
+        }
+        const logRow = [
+          new Date().toISOString(),
+          importLog.status || "success",
+          importLog.total_count || 0,
+          importLog.success_count || 0,
+          importLog.failed_count || 0,
+          importLog.duplicate_count || 0,
+          importLog.notes || ""
+        ];
+        logSheet.getRange(logSheet.getLastRow() + 1, 1, 1, logRow.length).setValues([logRow]);
       }
       
       return createJsonResponse({
         success: true,
-        message: `成功匯入地圖 '${mapId}' 的 ${points ? points.length : 0} 筆點位與詮釋資料！`
+        message: `成功匯入地圖 '${mapId}' 的 ${points ? points.length : 0} 筆點位與詮釋資料，並自動更新地址快取與日誌。`
       }, 200);
     }
     
@@ -297,6 +348,56 @@ function doGet(e) {
         query: q,
         results: results
       }, 200);
+    }
+
+    // ==========================================
+    // 功能 E：取得特定地圖的地址經緯度快取 (action=get_cache)
+    // ==========================================
+    if (action === "get_cache") {
+      if (!mapId) {
+        return createJsonResponse({ success: false, error: "未指定地圖識別碼 (map_id)。" }, 400);
+      }
+      
+      const catalogSpreadsheet = SpreadsheetApp.openById(GLOBAL_CATALOG_SPREADSHEET_ID);
+      const catalogSheet = catalogSpreadsheet.getSheetByName("MAP_LIST");
+      if (!catalogSheet) {
+        return createJsonResponse({ success: false, error: "在 Catalog 中找不到 MAP_LIST 工作表。" }, 500);
+      }
+      
+      const catalogRows = getSheetRows(catalogSheet);
+      const mapConfig = catalogRows.find(row => row.map_id === mapId && String(row.status).toLowerCase() === "active");
+      
+      if (!mapConfig) {
+        return createJsonResponse({ success: false, error: `地圖 '${mapId}' 未註冊或已被停用。` }, 404);
+      }
+      
+      const targetSpreadsheetId = mapConfig.spreadsheet_id;
+      if (!targetSpreadsheetId) {
+        return createJsonResponse({ success: false, error: `地圖 '${mapId}' 的試算表 ID 為空。` }, 500);
+      }
+      
+      try {
+        const targetSpreadsheet = SpreadsheetApp.openById(targetSpreadsheetId);
+        const cacheSheet = targetSpreadsheet.getSheetByName("ADDRESS_CACHE");
+        if (!cacheSheet) {
+          return createJsonResponse({ success: true, cache: {} }, 200);
+        }
+        
+        const cacheRows = getSheetRows(cacheSheet);
+        const cacheMap = {};
+        cacheRows.forEach(r => {
+          if (r.address && r.lat && r.lng) {
+            cacheMap[String(r.address).trim()] = {
+              lat: parseFloat(r.lat),
+              lng: parseFloat(r.lng)
+            };
+          }
+        });
+        
+        return createJsonResponse({ success: true, cache: cacheMap }, 200);
+      } catch (err) {
+        return createJsonResponse({ success: false, error: `讀取快取失敗: ${err.message}` }, 500);
+      }
     }
 
     // 1. 開啟全域 Catalog 試算表並讀取 MAP_LIST

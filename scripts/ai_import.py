@@ -51,6 +51,28 @@ def get_gemini_client():
     print("[INFO] 成功使用標準 API Key 初始化 Gemini 用戶端。")
     return client
 
+# 🧭 主要編碼器：呼叫 Google Maps Geocoding API
+def google_geocode(address, api_key):
+    try:
+        url = f"https://maps.googleapis.com/maps/api/geocode/json?address={urllib.parse.quote(address)}&key={api_key}&language=zh-TW"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=5) as response:
+            res = json.loads(response.read().decode('utf-8'))
+            if res.get("status") == "OK" and res.get("results"):
+                loc = res["results"][0]["geometry"]["location"]
+                return float(loc["lat"]), float(loc["lng"])
+    except Exception as e:
+        print(f"    [Geocode-Google] 呼叫 Google 地理編碼失敗: {e}")
+    return None, None
+
+# 📐 座標合理範圍驗證
+def is_coordinate_reasonable(lat, lng, map_id):
+    # 若地圖為台南地圖，限制在台南範圍
+    if "quit-smoking" in map_id or "tainan" in map_id:
+        return 22.8 <= lat <= 23.4 and 120.0 <= lng <= 120.6
+    # 預設限制在台灣範圍
+    return 21.8 <= lat <= 26.4 and 119.5 <= lng <= 122.5
+
 # 🧭 內部底層查詢 Nominatim
 def _query_nominatim(address):
     try:
@@ -170,6 +192,7 @@ def call_gemini_for_chunk(client, chunk_str):
     - opening_hours: 字串，開放或營業時間 (若無請留空)
     - tags: 字串陣列，例如 ["免費諮詢", "門診", "公立"] (請根據地標特徵自動打上 1-3 個標籤)
     - custom_fields: 物件，若資料中有其他極為重要的自訂欄位，請將其鍵名冠以 "custom_"，並放入此物件中。例如原始欄位為「院長姓名」，請對應為 {{"custom_director": "院長名字"}}
+    - confidence: 物件，包含每個對齊欄位的信心分數（0.0 ~ 1.0）。必須包含 "name" 與 "address" 的對齊信心評估。例如 {{"name": 0.95, "address": 0.90}}
     
     【輸出 JSON 根節點格式】
     {{
@@ -300,65 +323,220 @@ def main():
         print(f"  - 主分類: {metadata.get('category')}")
         print(f"  - 資料來源: {metadata.get('source_name')}")
 
-    # 品質校驗：重複檢查與去重
-    valid_points = []
-    seen_names = set()
-    for p in all_points:
-        name = p.get("name", "").strip()
-        if not name:
-            continue
-        if name in seen_names:
-            continue
-        seen_names.add(name)
-        valid_points.append(p)
-        
-    points = valid_points
-    print(f"[INFO] 經過去重處理，有效點位共 {len(points)} 筆。")
-
-    # 🧭 本地地理編碼 (OSM Nominatim API 備援)
-    # 💡 效能與安全性保護：若需要定位的點位數大於 15 筆，為防 Nominatim 封鎖 IP，自動略過本地編碼，引導至雲端處理！
-    if args.geocode:
-        empty_coords_count = sum(1 for p in points if not p.get("lat") or not p.get("lng") or float(p.get("lat")) == 0.0 or float(p.get("lng")) == 0.0)
-        
-        if empty_coords_count > 15:
-            print(f"\n[INFO] 檢測到有 {empty_coords_count} 筆空座標點位。由於數量過多，為避免被 OSM Nominatim 阻斷服務 (Rate-limited)，本機將略過本地編碼。")
-            print("  [Hint] 請在資料匯入成功後，於試算表點選選單「Sheet2Map -> Geocode」進行高速雲端地理定位！")
-        else:
-            print("\n[INFO] 正在對經緯度空白的地址執行本地地理編碼...")
-            for p in points:
-                lat = p.get("lat")
-                lng = p.get("lng")
-                address = p.get("address", "").strip()
-                
-                # 若 lat, lng 為空或為 0.0，且地址不為空，進行解析
-                if address and (not lat or not lng or float(lat) == 0.0 or float(lng) == 0.0):
-                    print(f"  - 正在解析地址: {address} ({p.get('name')})")
-                    new_lat, new_lng = geocode_address(address)
-                    if new_lat and new_lng:
-                        p["lat"] = new_lat
-                        p["lng"] = new_lng
-                        print(f"    -> 成功解析座標: {new_lat}, {new_lng}")
-                    else:
-                        print(f"    -> 解析失敗，將寫入空白座標由使用者於試算表補正。")
-                    
-    # 📡 匯入至 Google Sheets API Web App
+    # 1. 取得 GAS 的 API URL 與 Google API Key
     gas_api_url = os.environ.get("GAS_API_URL")
     if not gas_api_url:
         print("[ERROR] 本地 .env 中未配置 GAS_API_URL，無法寫入雲端試算表。")
         sys.exit(1)
+
+    google_maps_api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+
+    # 2. 從 GAS 下載該地圖的 ADDRESS_CACHE 快取資料
+    gas_cache = {}
+    try:
+        params = urllib.parse.urlencode({"action": "get_cache", "map_id": args.map_id})
+        separator = "&" if "?" in gas_api_url else "?"
+        url = f"{gas_api_url}{separator}{params}"
+        print(f"[INFO] 正在連線雲端取得該地圖之地址快取...")
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=15) as response:
+            res_data = json.loads(response.read().decode("utf-8"))
+            if res_data.get("success"):
+                gas_cache = res_data.get("cache", {})
+                print(f"[INFO] 成功載入 {len(gas_cache)} 筆雲端地址快取。")
+    except Exception as e:
+        print(f"[WARN] 無法從雲端取得快取，將直接調用地理編碼 API: {e}")
+
+    # 3. 信心分數查驗 (Mapping Confidence)
+    low_confidence_count = 0
+    threshold = args.threshold
+    low_confidence_details = []
+    for idx, p in enumerate(all_points):
+        conf = p.get("confidence", {})
+        name_conf = conf.get("name", 1.0)
+        addr_conf = conf.get("address", 1.0)
+        if name_conf < threshold or addr_conf < threshold:
+            low_confidence_count += 1
+            low_confidence_details.append(f"  - 點位 '{p.get('name')}' 信心分數低於限制 (Name: {name_conf}, Address: {addr_conf})")
+
+    if low_confidence_count > 0:
+        metadata["automation_level"] = "human-review"
+        print(f"\n[WARNING] 檢測到 {low_confidence_count} 筆關鍵欄位對齊信心分數低於 {threshold * 100}%，將此批次標示為 'human-review'！")
+        for detail in low_confidence_details[:5]: # 最多印出 5 筆
+            print(detail)
+        if low_confidence_count > 5:
+            print(f"  ... 等共 {low_confidence_count} 筆。")
+    else:
+        metadata["automation_level"] = "full-auto"
+    
+    metadata["maintainer"] = "etrnya"
+
+    # 4. 品質校驗：重複數據檢測與去重 (名稱與地址皆相同視為重複)
+    unique_points = []
+    seen_keys = set()
+    duplicate_count = 0
+    duplicate_names = []
+    
+    for p in all_points:
+        name = p.get("name", "").strip()
+        address = p.get("address", "").strip()
+        if not name:
+            continue
+        key = f"{name}||{address}"
+        if key in seen_keys:
+            duplicate_count += 1
+            duplicate_names.append(name)
+            continue
+        seen_keys.add(key)
+        unique_points.append(p)
         
+    print(f"\n[Deduplication] 重複檢查：過濾掉 {duplicate_count} 筆重複點位。")
+    if duplicate_count > 0:
+        print(f"  [Duplicate Warning] 重複地標包括: {', '.join(duplicate_names[:10])}")
+    print(f"[INFO] 經過去重後，共有 {len(unique_points)} 筆有效點位。")
+
+    # 5. 地理編碼策略 (Geocoding & Failover)
+    success_geocode_count = 0
+    failed_geocode_count = 0
+    cache_hit_count = 0
+    google_api_hit_count = 0
+    nominatim_hit_count = 0
+    
+    # 計算有多少點位需要地理編碼
+    empty_coords = [p for p in unique_points if not p.get("lat") or not p.get("lng") or float(p.get("lat")) == 0.0 or float(p.get("lng")) == 0.0]
+    
+    if args.geocode and len(empty_coords) > 0:
+        if len(empty_coords) > 15 and not google_maps_api_key:
+            # Nominatim 限制，空座標太多且無 Google API 時，避免被 OSM 封鎖
+            print(f"\n[INFO] 檢測到有 {len(empty_coords)} 筆空座標點位且無 Google Maps API Key。由於數量過多，為避免被 OSM Nominatim 阻斷服務，本機將略過地理編碼。")
+            print("  [Hint] 匯入成功後，請於試算表點選選單「Sheet2Map -> Geocode」進行高速雲端地理定位。")
+        else:
+            print(f"\n[INFO] 開始對 {len(empty_coords)} 筆空座標點位執行地理編碼與備援轉移...")
+            for p in unique_points:
+                lat = p.get("lat")
+                lng = p.get("lng")
+                address = p.get("address", "").strip()
+                
+                # 若經緯度為空或 0.0 且地址不為空
+                if address and (not lat or not lng or float(lat) == 0.0 or float(lng) == 0.0):
+                    # 1) 快取查驗
+                    if address in gas_cache:
+                        c = gas_cache[address]
+                        p["lat"] = c["lat"]
+                        p["lng"] = c["lng"]
+                        cache_hit_count += 1
+                        success_geocode_count += 1
+                        continue
+                        
+                    # 2) Google Maps Geocoding (主要編碼器)
+                    resolved = False
+                    if google_maps_api_key:
+                        print(f"  - 正在使用 [Google Maps] 解析: {address} ({p.get('name')})")
+                        glat, glng = google_geocode(address, google_maps_api_key)
+                        if glat and glng:
+                            p["lat"] = glat
+                            p["lng"] = glng
+                            google_api_hit_count += 1
+                            success_geocode_count += 1
+                            resolved = True
+                            
+                    # 3) OSM Nominatim Geocoding (備援編碼器)
+                    if not resolved:
+                        print(f"  - 正在使用 [OSM Nominatim] 備援解析: {address} ({p.get('name')})")
+                        olat, olng = geocode_address(address)
+                        if olat and olng:
+                            p["lat"] = olat
+                            p["lng"] = olng
+                            nominatim_hit_count += 1
+                            success_geocode_count += 1
+                            resolved = True
+                            
+                    if not resolved:
+                        print(f"    [Geocode Error] '{p.get('name')}' 地理編碼失敗，座標設為空白")
+                        p["lat"] = ""
+                        p["lng"] = ""
+                        failed_geocode_count += 1
+    
+    # 6. 座標合理範圍驗證 (Import Validation)與非空必要欄位檢查
+    final_points = []
+    out_of_bounds_count = 0
+    missing_required_count = 0
+    
+    for p in unique_points:
+        name = p.get("name", "").strip()
+        cat = p.get("category", "").strip()
+        
+        # 必要欄位檢查
+        if not name or not cat:
+            missing_required_count += 1
+            print(f"  [ValidationError] 點位 '{name}' 缺少必要欄位 (Name 或 Category 為空)，將過濾此資料。")
+            continue
+            
+        lat = p.get("lat")
+        lng = p.get("lng")
+        
+        if lat and lng and lat != "" and lng != "":
+            try:
+                lat_f = float(lat)
+                lng_f = float(lng)
+                if not is_coordinate_reasonable(lat_f, lng_f, args.map_id):
+                    out_of_bounds_count += 1
+                    print(f"  [Coordinate Warning] 點位 '{name}' 座標 ({lat_f}, {lng_f}) 超出合理地理範圍限制！")
+            except ValueError:
+                pass
+                
+        final_points.append(p)
+
+    # 7. 生成匯入日誌報告 (IMPORT_LOG)
+    import_status = "success"
+    if low_confidence_count > 0 or failed_geocode_count > 0 or out_of_bounds_count > 0:
+        import_status = "warning"
+        
+    notes_parts = []
+    if low_confidence_count > 0:
+        notes_parts.append(f"LowConf: {low_confidence_count}")
+    if out_of_bounds_count > 0:
+        notes_parts.append(f"OutOfBounds: {out_of_bounds_count}")
+    if failed_geocode_count > 0:
+        notes_parts.append(f"GeocodeFailed: {failed_geocode_count}")
+    if cache_hit_count > 0:
+        notes_parts.append(f"CacheHit: {cache_hit_count}")
+        
+    notes = ", ".join(notes_parts) if notes_parts else "AI Auto Import Successfully."
+    
+    import_log = {
+        "status": import_status,
+        "total_count": len(all_points),
+        "success_count": len(final_points) - failed_geocode_count,
+        "failed_count": failed_geocode_count + missing_required_count,
+        "duplicate_count": duplicate_count,
+        "notes": notes
+    }
+
+    # 8. 發送至 GAS API
     import_payload = {
         "action": "import",
         "map_id": args.map_id,
         "metadata": metadata,
-        "points": points
+        "points": final_points,
+        "import_log": import_log
     }
     
     print(f"\n[INFO] 正在連線至 Apps Script API 寫入試算表 (Map ID: {args.map_id})...")
     result = post_to_gas(gas_api_url, import_payload)
     
     if result and result.get("success"):
-        print(f"\n[SUCCESS] 匯入成功！{result.get('message')}")
+        print(f"\n[SUCCESS] 匯入成功！")
+        print(f"  - 總點位數: {len(all_points)} 筆")
+        print(f"  - 寫入點位: {len(final_points)} 筆")
+        print(f"  - 重複去重: {duplicate_count} 筆")
+        print(f"  - 地理編碼成功: {success_geocode_count} 筆 (快取: {cache_hit_count}, Google: {google_api_hit_count}, OSM: {nominatim_hit_count})")
+        if failed_geocode_count > 0:
+            print(f"  - 地理編碼失敗: {failed_geocode_count} 筆 (請在雲端手動編碼或修補地址)")
+        if out_of_bounds_count > 0:
+            print(f"  - 座標超出合理地理邊界警告: {out_of_bounds_count} 筆 (已記錄於匯入日誌中)")
+        print(f"  - 專案發布等級: {metadata.get('automation_level')}")
+        print(f"  - 雲端回傳訊息: {result.get('message')}")
     else:
         error_msg = result.get("error") if result else "無回應或連線超時"
         print(f"\n[ERROR] 匯入試算表失敗: {error_msg}")
