@@ -1,6 +1,6 @@
 'use server';
 
-import { fetchMapDataFromGAS, fetchMapsListFromGAS, CatalogMapSummary } from '@/utils/gas';
+import { fetchMapDataFromGAS, fetchMapsListFromGAS, CatalogMapSummary, fetchSearchAllMapsFromGAS, CrossSearchPoint } from '@/utils/gas';
 import { MapDataPayload } from '@/types/map';
 
 /**
@@ -31,5 +31,19 @@ export async function getMapsListAction(): Promise<{ success: boolean; maps?: Ca
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return { success: false, error: msg || '無法取得地圖清單，請稍後再試。' };
+  }
+}
+
+// 3. 跨地圖全域搜尋
+export async function searchAllMapsAction(q: string): Promise<{ success: boolean; results?: CrossSearchPoint[]; error?: string }> {
+  try {
+    if (!q || typeof q !== 'string' || !q.trim()) {
+      return { success: true, results: [] };
+    }
+    const results = await fetchSearchAllMapsFromGAS(q);
+    return { success: true, results };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: msg || '跨地圖搜尋時出錯，請稍後再試。' };
   }
 }

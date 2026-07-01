@@ -1,4 +1,4 @@
-import { MapDataPayload } from '../types/map';
+import { MapDataPayload, MapPoint } from '../types/map';
 
 const GAS_API_URL = process.env.GAS_API_URL || process.env.NEXT_PUBLIC_GAS_API_URL;
 const isDev = process.env.NODE_ENV === 'development';
@@ -77,6 +77,42 @@ export async function fetchMapsListFromGAS(): Promise<CatalogMapSummary[]> {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('❌ [Infrastructure] fetchMapsListFromGAS 失敗:', msg);
+    throw err;
+  }
+}
+
+export interface CrossSearchPoint {
+  map_id: string;
+  map_title: string;
+  point: MapPoint;
+}
+
+// 3. 跨地圖全域搜尋
+export async function fetchSearchAllMapsFromGAS(q: string): Promise<CrossSearchPoint[]> {
+  if (!GAS_API_URL) {
+    throw new Error('未設定環境變數 GAS_API_URL 或 NEXT_PUBLIC_GAS_API_URL。');
+  }
+
+  const url = `${GAS_API_URL}?action=search&q=${encodeURIComponent(q)}`;
+  
+  try {
+    const response = await fetch(url, {
+      next: { revalidate: 300 }, // 跨地圖搜尋快取 5 分鐘
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP 錯誤! 狀態碼: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || '跨地圖搜尋失敗');
+    }
+
+    return (data.results as CrossSearchPoint[]) || [];
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`❌ [Infrastructure] fetchSearchAllMapsFromGAS 失敗 (q: ${q}):`, msg);
     throw err;
   }
 }

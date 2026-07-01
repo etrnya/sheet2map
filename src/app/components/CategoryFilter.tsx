@@ -7,6 +7,7 @@ interface CategoryFilterProps {
   selectedCategory: string;
   onSelectCategory: (category: string) => void;
   config: MapConfig;
+  favoritesCount?: number;
 }
 
 // 根據 theme_color 名稱返回 Tailwind 樣式類別對照
@@ -28,6 +29,7 @@ export default function CategoryFilter({
   selectedCategory,
   onSelectCategory,
   config,
+  favoritesCount = 0,
 }: CategoryFilterProps) {
   const theme = getThemeClasses(config.theme_color);
 
@@ -46,6 +48,20 @@ export default function CategoryFilter({
         >
           全部 ({categories.length ? '多種' : '0'})
         </button>
+
+        {/* ⭐️ 「我的收藏」按鈕 (若地圖設定啟用) */}
+        {config.enable_favorites && (
+          <button
+            onClick={() => onSelectCategory('__favorites__')}
+            className={`px-4 py-2 text-[14px] font-semibold border rounded-full transition-all duration-300 active:scale-95 whitespace-nowrap flex items-center gap-1.5 ${
+              selectedCategory === '__favorites__'
+                ? 'bg-yellow-500 text-white shadow-md border-transparent shadow-yellow-100'
+                : 'bg-white/95 text-yellow-600 border-yellow-100 hover:bg-yellow-50/50'
+            }`}
+          >
+            ⭐ 我的收藏 ({favoritesCount})
+          </button>
+        )}
 
         {/* 各分類按鈕 */}
         {categories.map((cat) => (

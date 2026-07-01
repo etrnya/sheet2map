@@ -6,9 +6,18 @@ interface DetailDrawerProps {
   point: MapPoint | null;
   onClose: () => void;
   config: MapConfig;
+  favorites?: string[];
+  onToggleFavorite?: (id: string) => void;
 }
 
-export default function DetailDrawer({ point, onClose, config }: DetailDrawerProps) {
+export default function DetailDrawer({
+  point,
+  onClose,
+  config,
+  favorites = [],
+  onToggleFavorite,
+}: DetailDrawerProps) {
+  const isFavorited = point ? favorites.includes(point.id) : false;
   if (!point) return null;
 
   // 建立 Google 地圖導航連結
@@ -59,14 +68,31 @@ export default function DetailDrawer({ point, onClose, config }: DetailDrawerPro
           <span className="text-[12px] font-bold tracking-wider uppercase bg-gray-100 text-gray-500 px-2.5 py-1 rounded-full">
             {point.category}
           </span>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-700 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex gap-2">
+            {config.enable_favorites && (
+              <button
+                onClick={() => onToggleFavorite?.(point.id)}
+                className={`p-1.5 rounded-full transition-all duration-300 active:scale-90 ${
+                  isFavorited
+                    ? 'bg-yellow-50 text-yellow-500 border border-yellow-100 shadow-sm shadow-yellow-50'
+                    : 'bg-gray-50 hover:bg-gray-100 text-gray-400 hover:text-gray-600 border border-gray-100'
+                }`}
+                title={isFavorited ? '從收藏移除' : '加入我的收藏'}
+              >
+                <svg className="w-5 h-5" fill={isFavorited ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499c.307-.887 1.56-.887 1.867 0l1.492 4.302c.13.376.495.63.893.63h4.523c.933 0 1.321 1.2.567 1.76l-3.662 2.656a.91.91 0 00-.33.993l1.492 4.302c.307.887-.714 1.63-1.47 1.07l-3.662-2.656a.91.91 0 00-1.07 0l-3.662 2.656c-.756.56-1.777-.183-1.47-1.07l1.492-4.302a.91.91 0 00-.33-.993L3.89 10.19c-.754-.56-.367-1.76.567-1.76h4.523c.398 0 .762-.253.893-.63l1.492-4.302z" />
+                </svg>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-700 transition-colors border border-gray-200"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* 滾動內容區 */}

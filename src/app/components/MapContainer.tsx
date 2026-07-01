@@ -8,6 +8,8 @@ import CategoryFilter from './CategoryFilter';
 import DetailDrawer from './DetailDrawer';
 import MapDataFooter from './MapDataFooter';
 import MapCatalogHeader from './MapCatalogHeader';
+import { searchAllMapsAction } from '@/app/actions';
+import { CrossSearchPoint } from '@/utils/gas';
 
 // ⏳ 動態載入 LeafletMap (禁用 SSR)，防止 Next.js 在伺服器端渲染時發生 "window is not defined" 錯誤
 const LeafletMap = dynamic(() => import('./LeafletMap'), {
@@ -35,17 +37,79 @@ export default function MapContainer({ points, config, metadata }: MapContainerP
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [gpsStatus, setGpsStatus] = useState<'idle' | 'locating' | 'success' | 'error'>('idle');
 
+  // ⭐️ 收藏夾點位 ID 狀態與本地儲存同步
+  const [favorites, setFavorites] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem(`s2m_fav_${config.map_id}`);
+      if (stored) {
+        try {
+          setFavorites(JSON.parse(stored));
+        } catch (e) {
+          console.error('Failed to parse favorites:', e);
+        }
+      }
+    }
+  }, [config.map_id]);
+
+  const handleToggleFavorite = (id: string) => {
+    setFavorites((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`s2m_fav_${config.map_id}`, JSON.stringify(next));
+      }
+      return next;
+    });
+  };
+
+  // 🌐 跨地圖全域搜尋狀態與副作用
+  const [crossResults, setCrossResults] = useState<CrossSearchPoint[]>([]);
+  const [isCrossSearching, setIsCrossSearching] = useState(false);
+
+  useEffect(() => {
+    if (!config.enable_cross_search) return;
+    if (searchQuery.trim().length <= 1) {
+      setCrossResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsCrossSearching(true);
+      try {
+        const res = await searchAllMapsAction(searchQuery);
+        if (res.success && res.results) {
+          // 過濾掉目前地圖的點位，只呈現其他地圖中符合關鍵字者
+          const filtered = res.results.filter((x) => x.map_id !== config.map_id);
+          setCrossResults(filtered);
+        } else {
+          setCrossResults([]);
+        }
+      } catch (err) {
+        console.error('Cross search error:', err);
+        setCrossResults([]);
+      } finally {
+        setIsCrossSearching(false);
+      }
+    }, 500); // 500ms 防抖
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, config.map_id, config.enable_cross_search]);
+
   // 1. 動態分析出所有點位擁有的分類列表 (去除重複)
   const categories = useMemo(() => {
     const cats = points.map((p) => p.category).filter(Boolean);
     return Array.from(new Set(cats));
   }, [points]);
 
-  // 2. 進行前端點位篩選 (搜尋關鍵字 + 分類篩選)
+  // 2. 進行前端點位篩選 (搜尋關鍵字 + 分類篩選 + 收藏夾過濾)
   const filteredPoints = useMemo(() => {
     return points.filter((p) => {
-      // 分類過濾
-      if (selectedCategory && p.category !== selectedCategory) {
+      // 收藏過濾
+      if (selectedCategory === '__favorites__') {
+        if (!favorites.includes(p.id)) return false;
+      } else if (selectedCategory && p.category !== selectedCategory) {
+        // 分類過濾
         return false;
       }
       // 關鍵字搜尋 (過濾名稱、地址、行政區)
@@ -59,7 +123,7 @@ export default function MapContainer({ points, config, metadata }: MapContainerP
       }
       return true;
     });
-  }, [points, selectedCategory, searchQuery]);
+  }, [points, selectedCategory, searchQuery, favorites]);
 
   // 3. 處理 URL 參數傳入指定地標點 (Deep Link 聚焦)
   useEffect(() => {
@@ -138,7 +202,50 @@ export default function MapContainer({ points, config, metadata }: MapContainerP
             selectedCategory={selectedCategory}
             onSelectCategory={setSelectedCategory}
             config={config}
+            favoritesCount={favorites.length}
           />
+
+          {/* 🌐 跨地圖全域搜尋結果顯示 */}
+          {config.enable_cross_search && (isCrossSearching || crossResults.length > 0) && (
+            <div className="bg-white/95 backdrop-blur-lg border border-gray-200/80 rounded-2xl p-4 shadow-xl space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-[12px] font-bold text-gray-500 flex items-center gap-1.5">
+                  🌐 跨地圖搜尋 {isCrossSearching && <span className="inline-block w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span>}
+                </span>
+                {crossResults.length > 0 && (
+                  <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                    在其他地圖找到 {crossResults.length} 筆
+                  </span>
+                )}
+              </div>
+              
+              {crossResults.length > 0 && (
+                <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 divide-y divide-gray-100">
+                  {crossResults.map((res) => (
+                    <a
+                      key={`${res.map_id}-${res.point.id}`}
+                      href={`/map/${res.map_id}?point=${res.point.id}`}
+                      className="block pt-1.5 first:pt-0 group"
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-extrabold text-gray-800 group-hover:text-blue-600 transition-colors truncate">
+                            {res.point.name}
+                          </p>
+                          <p className="text-[11px] text-gray-400 truncate">
+                            {res.point.address || '無地址資訊'}
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-[10px] font-extrabold tracking-wider bg-gray-100 text-gray-500 px-2 py-0.5 rounded-md group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
+                          {res.map_title}
+                        </span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* 下半部：資料透明度頁尾 */}
@@ -153,6 +260,8 @@ export default function MapContainer({ points, config, metadata }: MapContainerP
         point={selectedPoint}
         onClose={() => setSelectedPoint(null)}
         config={config}
+        favorites={favorites}
+        onToggleFavorite={handleToggleFavorite}
       />
 
     </main>

@@ -229,6 +229,76 @@ function doGet(e) {
       }, 200);
     }
 
+    // ==========================================
+    // 功能 D：跨地圖點位全域搜尋 (action=search)
+    // ==========================================
+    if (action === "search") {
+      const q = e.parameter.q;
+      if (!q) {
+        return createJsonResponse({ success: false, error: "缺少搜尋關鍵字 (q)。" }, 400);
+      }
+      
+      const catalogSpreadsheet = SpreadsheetApp.openById(GLOBAL_CATALOG_SPREADSHEET_ID);
+      const catalogSheet = catalogSpreadsheet.getSheetByName("MAP_LIST");
+      if (!catalogSheet) {
+        return createJsonResponse({ success: false, error: "在 Catalog 試算表中找不到 'MAP_LIST' 工作表。" }, 500);
+      }
+      
+      const catalogRows = getSheetRows(catalogSheet);
+      const activeMaps = catalogRows.filter(row => String(row.status).toLowerCase() === "active");
+      
+      const results = [];
+      const searchLower = q.toLowerCase().trim();
+      
+      activeMaps.forEach(mapConfig => {
+        const targetSpreadsheetId = mapConfig.spreadsheet_id;
+        if (!targetSpreadsheetId) return;
+        
+        try {
+          const targetSpreadsheet = SpreadsheetApp.openById(targetSpreadsheetId);
+          const pointsSheet = targetSpreadsheet.getSheetByName("POINTS");
+          if (!pointsSheet) return;
+          
+          const pointsRaw = getSheetRows(pointsSheet);
+          pointsRaw.forEach(p => {
+            const name = String(p.name || "");
+            const address = String(p.address || "");
+            const tags = String(p.tags || "");
+            
+            if (name.toLowerCase().includes(searchLower) || 
+                address.toLowerCase().includes(searchLower) || 
+                tags.toLowerCase().includes(searchLower)) {
+              results.push({
+                map_id: mapConfig.map_id,
+                map_title: mapConfig.title,
+                point: {
+                  id: p.id ? String(p.id) : "",
+                  name: name,
+                  lat: p.lat ? parseFloat(p.lat) : 0,
+                  lng: p.lng ? parseFloat(p.lng) : 0,
+                  category: p.category ? String(p.category) : "未分類",
+                  address: address,
+                  district: p.district ? String(p.district) : "",
+                  phone: p.phone ? String(p.phone) : "",
+                  website: p.website ? String(p.website) : "",
+                  description: p.description ? String(p.description) : "",
+                  tags: tags ? tags.split(",").map(t => t.trim()) : []
+                }
+              });
+            }
+          });
+        } catch (err) {
+          Logger.log("搜尋地圖 '" + mapConfig.map_id + "' 發生錯誤: " + err.message);
+        }
+      });
+      
+      return createJsonResponse({
+        success: true,
+        query: q,
+        results: results
+      }, 200);
+    }
+
     // 1. 開啟全域 Catalog 試算表並讀取 MAP_LIST
     const catalogSpreadsheet = SpreadsheetApp.openById(GLOBAL_CATALOG_SPREADSHEET_ID);
     const catalogSheet = catalogSpreadsheet.getSheetByName("MAP_LIST");
@@ -588,6 +658,9 @@ function geocodePointsSheet() {
   let cacheHitCount = 0;
   let failedCount = 0;
 
+  const newCacheEntries = [];
+  let pointsSheetModified = false;
+
   for (let i = 1; i < values.length; i++) {
     const address = String(values[i][addressCol - 1]).trim();
     const latVal = values[i][latCol - 1];
@@ -598,12 +671,14 @@ function geocodePointsSheet() {
       // 1. 先查找快取
       if (cacheMap[address]) {
         const coords = cacheMap[address];
-        pointsSheet.getRange(i + 1, latCol).setValue(coords.lat);
-        pointsSheet.getRange(i + 1, lngCol).setValue(coords.lng);
+        values[i][latCol - 1] = coords.lat;
+        values[i][lngCol - 1] = coords.lng;
+        pointsSheetModified = true;
         cacheHitCount++;
       } else {
-        // 2. 使用 Google Apps Script 內建之 Google Maps Geocoder API (高速且無鎖 IP 問題)
+        // 2. 使用 Google Apps Script 內建之 Google Maps Geocoder API
         try {
+          Utilities.sleep(100); // 微調以防超頻 API QPS
           const geocoder = Maps.newGeocoder().setLanguage("zh-TW");
           const response = geocoder.geocode(address);
           
@@ -611,12 +686,13 @@ function geocodePointsSheet() {
             const lat = response.results[0].geometry.location.lat;
             const lng = response.results[0].geometry.location.lng;
             
-            // 寫入點位表
-            pointsSheet.getRange(i + 1, latCol).setValue(lat);
-            pointsSheet.getRange(i + 1, lngCol).setValue(lng);
+            // 寫入點位表記憶體資料
+            values[i][latCol - 1] = lat;
+            values[i][lngCol - 1] = lng;
+            pointsSheetModified = true;
             
-            // 寫入快取表
-            cacheSheet.appendRow([address, lat, lng]);
+            // 寫入快取記憶體資料，準備批次寫入
+            newCacheEntries.push([address, lat, lng]);
             cacheMap[address] = { lat, lng };
             geocodeCount++;
           } else {
@@ -628,6 +704,16 @@ function geocodePointsSheet() {
         }
       }
     }
+  }
+
+  // 批次寫入 POINTS
+  if (pointsSheetModified) {
+    range.setValues(values);
+  }
+
+  // 批次寫入快取
+  if (newCacheEntries.length > 0) {
+    cacheSheet.getRange(cacheSheet.getLastRow() + 1, 1, newCacheEntries.length, 3).setValues(newCacheEntries);
   }
 
   ui.alert(
