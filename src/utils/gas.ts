@@ -24,7 +24,8 @@ export async function fetchMapDataFromGAS(mapId: string): Promise<MapDataPayload
     throw new Error('未設定環境變數 GAS_API_URL 或 NEXT_PUBLIC_GAS_API_URL。');
   }
 
-  const url = `${GAS_API_URL}?map_id=${encodeURIComponent(mapId)}`;
+  // 💡 加上 _cb 參數（Cache Buster）來強制刷掉 Vercel 舊有的持久快取，同時維持一小時的快取機制
+  const url = `${GAS_API_URL}?map_id=${encodeURIComponent(mapId)}&_cb=v2`;
   
   try {
     const response = await fetch(url, {
