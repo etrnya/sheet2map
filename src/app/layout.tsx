@@ -19,7 +19,9 @@ export const metadata: Metadata = {
   },
   description: "任何試算表、OpenData，都能一秒轉成手機版互動地圖。",
   icons: {
-    icon: "/favicon.png",
+    icon: "/favicon.png?v=2",
+    shortcut: "/favicon.png?v=2",
+    apple: "/favicon.png?v=2",
   },
   openGraph: {
     title: "Sheet2Map 互動地圖平台",
