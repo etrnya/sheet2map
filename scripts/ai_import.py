@@ -73,6 +73,18 @@ def is_coordinate_reasonable(lat, lng, map_id):
     # 預設限制在台灣範圍
     return 21.8 <= lat <= 26.4 and 119.5 <= lng <= 122.5
 
+# 🔠 繁簡轉譯錯誤靜默修正 (SilentFix)
+def fix_traditional_chinese_typos(text):
+    if not text or not isinstance(text, str):
+        return text
+    # 1. 修正地址中的「xx裡」為「xx里」 (例如：北興裡 -> 北興里)
+    text = re.sub(r'([縣市區鄉鎮])([^裡\s]{1,4}?)裡', r'\1\2里', text)
+    # 2. 修正里鄰、里民、里辦公室等常見簡繁錯別字
+    text = text.replace("裡長", "里長").replace("裡民", "里民").replace("裡辦公", "里辦公")
+    # 3. 修正資料來源中的幻覺標示，例如 "臺南市衛生局 (安)" 中的 "(安)"
+    text = text.replace(" (安)", "").replace("(安)", "")
+    return text
+
 # 🧭 內部底層查詢 Nominatim
 def _query_nominatim(address):
     try:
@@ -317,6 +329,21 @@ def main():
             print(f"[ERROR] Gemini 解析或 JSON 轉換失敗: {e}")
             sys.exit(1)
             
+    # 🔠 靜默修正 (SilentFix) 簡繁轉譯錯別字與資料來源幻覺
+    if metadata:
+        metadata["title"] = fix_traditional_chinese_typos(metadata.get("title", ""))
+        if metadata.get("description"):
+            metadata["description"] = fix_traditional_chinese_typos(metadata.get("description", ""))
+        metadata["category"] = fix_traditional_chinese_typos(metadata.get("category", ""))
+        metadata["source_name"] = fix_traditional_chinese_typos(metadata.get("source_name", ""))
+        
+    for p in all_points:
+        p["name"] = fix_traditional_chinese_typos(p.get("name", ""))
+        p["address"] = fix_traditional_chinese_typos(p.get("address", ""))
+        p["district"] = fix_traditional_chinese_typos(p.get("district", ""))
+        if p.get("description"):
+            p["description"] = fix_traditional_chinese_typos(p.get("description", ""))
+
     print(f"\n[AI 對齊完成] 共成功提取了 {len(all_points)} 筆地標點位。")
     if metadata:
         print(f"  - 地圖標題: {metadata.get('title')}")

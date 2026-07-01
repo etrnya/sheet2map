@@ -134,6 +134,17 @@ function doPost(e) {
         if (!cacheSheet) {
           cacheSheet = targetSpreadsheet.insertSheet("ADDRESS_CACHE");
           cacheSheet.getRange(1, 1, 1, 4).setValues([["address", "lat", "lng", "updated_at"]]);
+        } else {
+          // 檢查並補齊 header 避免順序與數量錯位
+          try {
+            const headersRange = cacheSheet.getRange(1, 1, 1, 4);
+            const headersValues = headersRange.getValues()[0];
+            if (headersValues.length < 4 || headersValues[3] !== "updated_at") {
+              headersRange.setValues([["address", "lat", "lng", "updated_at"]]);
+            }
+          } catch (e) {
+            Logger.log("補齊快取表 Header 失敗: " + e.message);
+          }
         }
         
         const existingCacheRows = getSheetRows(cacheSheet);
@@ -324,15 +335,15 @@ function doGet(e) {
                 map_title: mapConfig.title,
                 point: {
                   id: p.id ? String(p.id) : "",
-                  name: name,
+                  name: fixTraditionalChineseTypos(name),
                   lat: p.lat ? parseFloat(p.lat) : 0,
                   lng: p.lng ? parseFloat(p.lng) : 0,
                   category: p.category ? String(p.category) : "未分類",
-                  address: address,
-                  district: p.district ? String(p.district) : "",
+                  address: fixTraditionalChineseTypos(address),
+                  district: fixTraditionalChineseTypos(p.district ? String(p.district) : ""),
                   phone: p.phone ? String(p.phone) : "",
                   website: p.website ? String(p.website) : "",
-                  description: p.description ? String(p.description) : "",
+                  description: fixTraditionalChineseTypos(p.description ? String(p.description) : ""),
                   tags: tags ? tags.split(",").map(t => t.trim()) : []
                 }
               });
@@ -508,17 +519,22 @@ function doGet(e) {
           .filter(t => t.length > 0);
       }
 
+      const rawName = p.name ? String(p.name) : "";
+      const rawAddress = p.address ? String(p.address) : "";
+      const rawDistrict = p.district ? String(p.district) : "";
+      const rawDesc = p.description ? String(p.description) : "";
+
       return {
         id: p.id ? String(p.id) : "",
-        name: p.name ? String(p.name) : "",
+        name: fixTraditionalChineseTypos(rawName),
         lat: p.lat ? parseFloat(p.lat) : 0,
         lng: p.lng ? parseFloat(p.lng) : 0,
         category: p.category ? String(p.category) : "未分類",
-        address: p.address ? String(p.address) : "",
-        district: p.district ? String(p.district) : "",
+        address: fixTraditionalChineseTypos(rawAddress),
+        district: fixTraditionalChineseTypos(rawDistrict),
         phone: p.phone ? String(p.phone) : "",
         website: p.website ? String(p.website) : "",
-        description: p.description ? String(p.description) : "",
+        description: fixTraditionalChineseTypos(rawDesc),
         image: p.image ? String(p.image) : "",
         opening_hours: p.opening_hours ? String(p.opening_hours) : "",
         tags: tagsArray,
@@ -718,12 +734,23 @@ function geocodePointsSheet() {
     return;
   }
 
-  // 確保建立 ADDRESS_CACHE 暫存快取分頁，防範對 Nominatim API 重複請求
+  // 確保建立 ADDRESS_CACHE 暫存快取分頁，防範重複請求
   let cacheSheet = ss.getSheetByName("ADDRESS_CACHE");
   if (!cacheSheet) {
     cacheSheet = ss.insertSheet("ADDRESS_CACHE");
-    cacheSheet.getRange(1, 1, 1, 3).setValues([["address", "lat", "lng"]]);
+    cacheSheet.getRange(1, 1, 1, 4).setValues([["address", "lat", "lng", "updated_at"]]);
     cacheSheet.setColumnWidth(1, 300);
+  } else {
+    // 檢查並補齊 header 避免順序與數量錯位
+    try {
+      const headersRange = cacheSheet.getRange(1, 1, 1, 4);
+      const headersValues = headersRange.getValues()[0];
+      if (headersValues.length < 4 || headersValues[3] !== "updated_at") {
+        headersRange.setValues([["address", "lat", "lng", "updated_at"]]);
+      }
+    } catch (e) {
+      Logger.log("補齊快取表 Header 失敗: " + e.message);
+    }
   }
 
   // 讀取現有快取
@@ -823,4 +850,20 @@ function geocodePointsSheet() {
     "💾 快取直接命中: " + cacheHitCount + " 筆\n" +
     "⚠️ 解析失敗/無相符座標: " + failedCount + " 筆"
   );
+}
+
+/**
+ * 繁簡轉譯錯誤靜默修正 (SilentFix)
+ * 將台灣地址與名稱中因簡繁轉譯錯誤而產生的「裡」修正為「里」
+ */
+function fixTraditionalChineseTypos(text) {
+  if (!text) return "";
+  var str = String(text);
+  // 1. 修正地址中的「xx裡」為「xx里」 (例如：北興裡 -> 北興里)
+  str = str.replace(/([縣市區鄉鎮])([^裡\s]{1,4}?)裡/g, '$1$2里');
+  // 2. 修正里鄰、里民、里辦公室等常見簡繁錯別字
+  str = str.replace(/裡長/g, '里長')
+           .replace(/裡民/g, '里民')
+           .replace(/裡辦公/g, '里辦公');
+  return str;
 }
