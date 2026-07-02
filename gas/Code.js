@@ -217,6 +217,14 @@ function doGet(e) {
         error: "尚未配置全域 Catalog 試算表 ID。請在 Apps Script 中填入 GLOBAL_CATALOG_SPREADSHEET_ID。"
       }, 500);
     }
+    
+    if (action === "update_catalog_for_me") {
+      updateCatalogDetails();
+      return createJsonResponse({
+        success: true,
+        message: "Catalog 試算表 ID 已經成功自動改好了！"
+      }, 200);
+    }
 
     // ==========================================
     // 功能 C：初始化 Catalog 試算表欄位與範例 (action=setup)
@@ -876,4 +884,56 @@ function fixTraditionalChineseTypos(text) {
            .replace(/裡民/g, '里民')
            .replace(/裡辦公/g, '里辦公');
   return str;
+}
+
+/**
+ * 自動配置與修正 Catalog 中的 spreadsheet_id 與地圖註冊行
+ */
+function updateCatalogDetails() {
+  const catalogSpreadsheet = SpreadsheetApp.openById(GLOBAL_CATALOG_SPREADSHEET_ID);
+  const catalogSheet = catalogSpreadsheet.getSheetByName("MAP_LIST");
+  if (!catalogSheet) return;
+  const range = catalogSheet.getDataRange();
+  const values = range.getValues();
+  const headers = values[0].map(h => String(h).trim());
+  const mapIdCol = headers.indexOf("map_id");
+  const spreadsheetIdCol = headers.indexOf("spreadsheet_id");
+  
+  if (mapIdCol === -1 || spreadsheetIdCol === -1) return;
+  
+  // 檢查是否已存在 restroom-nursing 與 disaster-shelter 兩列，若無則追加
+  const mapIds = values.map(r => r[mapIdCol]);
+  
+  if (mapIds.indexOf("restroom-nursing") === -1) {
+    catalogSheet.appendRow([
+      "restroom-nursing", "臺南市友善公廁與哺集乳室地圖", "health", "public", 
+      "1hAsMKGvzEpTMoaZcwYbYC95ag2F99dB_9livzKAfwB8", "active", "🚻", "purple", 
+      "14", "TRUE", "TRUE", "TRUE", "TRUE"
+    ]);
+  }
+  if (mapIds.indexOf("disaster-shelter") === -1) {
+    catalogSheet.appendRow([
+      "disaster-shelter", "臺南市防災與避難收容地圖", "safety", "public", 
+      "1XSMFiE3ykRGkrxACWPOHlOTFopjOmvcf-c_6mdHFB2g", "active", "🚨", "orange", 
+      "13", "TRUE", "TRUE", "TRUE", "TRUE"
+    ]);
+  }
+  
+  // 再次讀取並更新所有的 spreadsheet_id
+  const updatedValues = catalogSheet.getDataRange().getValues();
+  for (let i = 1; i < updatedValues.length; i++) {
+    const mapId = updatedValues[i][mapIdCol];
+    let newId = "";
+    if (mapId === "aed") {
+      newId = "1LAPQMipJzoBfK7Ej0jrwFvSS5t4-Zj5jzhNk4KRSpVg";
+    } else if (mapId === "restroom-nursing") {
+      newId = "1hAsMKGvzEpTMoaZcwYbYC95ag2F99dB_9livzKAfwB8";
+    } else if (mapId === "disaster-shelter") {
+      newId = "1XSMFiE3ykRGkrxACWPOHlOTFopjOmvcf-c_6mdHFB2g";
+    }
+    
+    if (newId) {
+      catalogSheet.getRange(i + 1, spreadsheetIdCol + 1).setValue(newId);
+    }
+  }
 }
