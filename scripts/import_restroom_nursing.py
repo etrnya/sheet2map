@@ -73,7 +73,7 @@ def main():
     # 1. 處理「臺南市公共廁所」資料
     # ==========================================
     print("[INFO] 正在處理『臺南市公共廁所』資料...")
-    restroom_url = "https://envopendata.moenv.gov.tw/api/v2/fac_p_30?api_key=e8ddf22c-a839-4a2a-b319-24d35e1129e7&format=csv" 
+    restroom_url = "https://data.moenv.gov.tw/api/v2/fac_p_30?api_key=e8ddf22c-a839-4a2a-b319-24d35e1129e7&format=csv" 
     # 💡 備用免費 api_key，若失效退回到本地 CSV 讀取
     
     restroom_csv = fetch_csv_ignore_ssl(restroom_url)

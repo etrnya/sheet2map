@@ -75,9 +75,9 @@ def main():
     # ==========================================
     print("[INFO] 正在下載『全國防災避難收容處所』Open Data...")
     
-    # 💡 內政部消防署全國避難收容處所開放 CSV 下載連結 (使用 NCDR 的固定下載網址或備用下載)
-    shelter_url = "https://datahub.ncdr.nat.gov.tw/api/v1/dataset/178000000A-000030/resource/csv" 
-    # 這是一個穩定的 NCDR API 下載連結
+    # 💡 內政部消防署全國避難收容處所開放 CSV 下載連結
+    shelter_url = "https://data.gov.tw/api/v1/dataset/73242/download?format=csv" 
+    # 這是一個穩定的 data.gov.tw 下載連結
     
     shelter_csv = fetch_csv_ignore_ssl(shelter_url)
     
