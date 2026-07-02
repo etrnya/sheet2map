@@ -161,6 +161,16 @@ def main():
             except ValueError:
                 pass
                 
+            # 💡 針對新化區聯合活動中心與同義宮進行硬編碼數據修正 (Data Hotfix)
+            if "新化區聯合活動中心" in name:
+                lat = 23.041907
+                lng = 120.307140
+                address = "臺南市新化區太平里民生路269號"
+            elif "同義宮" in name:
+                lat = 23.025009
+                lng = 120.340401
+                address = "臺南市新化區知義里口埤8號"
+                
             district = r[dist_idx].strip() if dist_idx < len(r) else ""
             phone = r[phone_idx].strip() if (phone_idx != -1 and phone_idx < len(r)) else ""
             capacity = r[capacity_idx].strip() if (capacity_idx != -1 and capacity_idx < len(r)) else "未明"
