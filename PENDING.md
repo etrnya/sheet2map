@@ -18,6 +18,8 @@
 - [x] **[前端 UI]** 實作 GPS 使用者定位、關鍵字搜尋與 `category` 次分類過濾功能
 - [x] **[前端 UI]** 實作地標詳情抽屜 (Detail Drawer / Sheet)，並整合 Google 導航與分享功能
 - [x] **[地理編碼]** 設計 `ADDRESS_CACHE` 工作表讀寫機制與 OSM Nominatim 備援機制
+- [x] **[數據治理]** 修復戒菸診所 5 大數據錯誤，實作 `direct_excel_import.py`、`sync_from_hpa.py` 與 `import_aed.py` 匯入與同步腳本
+- [x] **[數據匯入]** 完成臺南市 993 筆公共場所 AED 據點資料精準對齊與匯入
 
 ### 3. 未來規劃 (Later)
 - [x] **[AI 匯入管道]** 開發自動化匯入 CLI 工具，串接大語言模型進行 AI Mapping (欄位映射與 `custom_xxx` 轉換，支持信心分數閾值)
@@ -29,5 +31,7 @@
 ---
 
 ## 📈 歷史提交紀錄 (Archived)
+- [x] **[數據修復]** 一鍵同步與實裝臺南合約戒菸據點 183 筆正確分類資料與地理編碼。
+- [x] **[數據匯入]** 實裝臺南公共場所 993 筆 AED 據點並以 Marker Cluster 進行地圖渲染。
 - [x] **[需求定義]** 釐清並完成 [UIMP_RPD_v1.6.md](file:///c:/Users/etrny/.gemini/antigravity/scratch/sheet2map/UIMP_RPD_v1.6.md) 需求規劃規格書，新增排除範疇、Map Config 與 ADR 索引。
 - [x] **[術語定義]** 完成專案 [GLOSSARY.md](file:///c:/Users/etrny/.gemini/antigravity/scratch/sheet2map/GLOSSARY.md) 術語字典。
