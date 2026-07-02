@@ -83,13 +83,22 @@ def main():
     
     # 備援：若下載失敗，嘗試讀取本地檔案
     local_shelter_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "TainanShelter.csv")
-    if not shelter_csv:
-        if os.path.exists(local_shelter_path):
-            print(f"  [INFO] 網路下載失敗，正從本地讀取: {local_shelter_path}...")
-            with open(local_shelter_path, "r", encoding="utf-8-sig") as f:
+    v9_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "避難收容處所點位檔案v9.csv")
+    
+    # 💡 優先使用本地已存在的 v9 檔案，否則使用 TainanShelter.csv
+    chosen_path = None
+    if os.path.exists(v9_path):
+        chosen_path = v9_path
+    elif os.path.exists(local_shelter_path):
+        chosen_path = local_shelter_path
+
+    if not shelter_csv or chosen_path:
+        if chosen_path:
+            print(f"  [INFO] 正從本地讀取 CSV: {os.path.basename(chosen_path)}...")
+            with open(chosen_path, "r", encoding="utf-8-sig") as f:
                 shelter_csv = f.read()
         else:
-            print("  [ERROR] 無法獲取防災收容資料（網路下載失敗且無本地備援 TainanShelter.csv 檔案）。")
+            print("  [ERROR] 無法獲取防災收容資料（網路下載失敗且無本地備援 CSV 檔案）。")
             sys.exit(1)
             
     # 解析避難收容處所 CSV
