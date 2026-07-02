@@ -24,13 +24,13 @@ export async function fetchMapDataFromGAS(mapId: string): Promise<MapDataPayload
     throw new Error('未設定環境變數 GAS_API_URL 或 NEXT_PUBLIC_GAS_API_URL。');
   }
 
-  // 💡 加上 _cb 參數（Cache Buster）來強制刷掉 Vercel 舊有的持久快取，同時維持一小時的快取機制
-  const url = `${GAS_API_URL}?map_id=${encodeURIComponent(mapId)}&_cb=v2`;
+  // 💡 加上 _cb 參數（Cache Buster）來強制刷掉 Vercel 舊有的持久快取，同時維持 60 秒的快取機制
+  const url = `${GAS_API_URL}?map_id=${encodeURIComponent(mapId)}&_cb=v3`;
   
   try {
     const response = await fetch(url, {
-      // 💡 開發模式下不啟用快取 (revalidate: 0) 以利即時偵錯；生產環境快取一小時 (ISR)
-      next: { revalidate: isDev ? 0 : 3600 },
+      // 💡 開發模式下不啟用快取 (revalidate: 0) 以利即時偵錯；生產環境快取 60 秒 (ISR)
+      next: { revalidate: isDev ? 0 : 60 },
     });
 
     if (!response.ok) {
@@ -57,12 +57,12 @@ export async function fetchMapsListFromGAS(): Promise<CatalogMapSummary[]> {
     throw new Error('未設定環境變數 GAS_API_URL 或 NEXT_PUBLIC_GAS_API_URL。');
   }
 
-  const url = `${GAS_API_URL}?action=list`;
+  const url = `${GAS_API_URL}?action=list&_cb=v3`;
   
   try {
     const response = await fetch(url, {
-      // 💡 開發模式下不啟用快取 (revalidate: 0)；生產環境快取 30 分鐘
-      next: { revalidate: isDev ? 0 : 1800 },
+      // 💡 開發模式下不啟用快取 (revalidate: 0)；生產環境快取 60 秒
+      next: { revalidate: isDev ? 0 : 60 },
     });
 
     if (!response.ok) {

@@ -230,7 +230,7 @@ export default function MapContainer({ points, config, metadata }: MapContainerP
                   {crossResults.map((res) => (
                     <a
                       key={`${res.map_id}-${res.point.id}`}
-                      href={`/map/${res.map_id}?point=${res.point.id}`}
+                      href={`/${res.map_id}?point=${res.point.id}`}
                       className="block pt-1.5 first:pt-0 group"
                     >
                       <div className="flex justify-between items-start gap-2">
